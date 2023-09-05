@@ -1,8 +1,8 @@
 import os
 import random
 import re
-import sqlite3
 import smtplib
+import sqlite3
 
 import discord
 
@@ -61,14 +61,19 @@ def send_email_code(db, email, user_id):
         subject = "ICT Scouts Discord Verifizierung"
         headers = "From: ICT Scouts Discord <discord@ict-scouts.ch>\n"
         headers += f"To: {email}"
-        body = f"Hallo,\n\nDein Bestätigungscode lautet: {code}\n\nViel Spass,\nICT Scouts"
+        body = (
+            f"Hallo,\n\nDein Bestätigungscode lautet: {code}\n\nViel Spass,\nICT Scouts"
+        )
         msg = f"Subject: {subject}\n{headers}\n\n{body}"
         try:
-            smtp.sendmail(os.getenv("EMAIL_USER", "discord@ict-scouts.ch"), email, msg.encode("utf-8"))
+            smtp.sendmail(
+                os.getenv("EMAIL_USER", "discord@ict-scouts.ch"),
+                email,
+                msg.encode("utf-8"),
+            )
         except Exception as e:
             print(e)
             return False
-
 
     return True
 
@@ -88,20 +93,20 @@ async def validate_user(db, user_id, code):
         if not (guild := bot.get_guild(int(guild_id))):
             return "Es ist ein Fehler aufgetreten. `(GUILD_NOT_FOUND)`"
 
-        if not(guild_member := guild.get_member(user_id)):
+        if not (guild_member := guild.get_member(user_id)):
             return "Es ist ein Fehler aufgetreten. `(MEMBER_NOT_ON_DISCORD)`"
 
-        if not(role_id := next(iter([r.id for r in guild.roles if r.name == "Member"]))):
+        if not (
+            role_id := next(iter([r.id for r in guild.roles if r.name == "Member"]))
+        ):
             return "Es ist ein Fehler aufgetreten. `(ROLE_NOT_FOUND)`"
 
-        if not(role := guild.get_role(role_id)):
+        if not (role := guild.get_role(role_id)):
             return "Es ist ein Fehler aufgetreten. `(ROLE_NOT_FOUND)`"
 
         await guild_member.add_roles(role)
 
-        return (
-            "Du wurdest erfolgreich verifiziert und hast jetzt Zugang zum Discord."
-        )
+        return "Du wurdest erfolgreich verifiziert und hast jetzt Zugang zum Discord."
     else:
         return "Der eingegebene Code ist falsch."
 
