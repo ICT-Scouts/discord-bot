@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Discord bot for managing users"
 authors = ["Gian Klug <gian.klug@ict-scouts.ch>"]
 readme = "README.md"
-packages = [{include = "discord_bot"}]
+packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
