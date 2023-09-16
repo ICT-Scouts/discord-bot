@@ -14,7 +14,7 @@ bot = discord.Bot(intents=intents)
 
 
 def db_setup():
-    db = sqlite3.connect("discord.db")
+    db = sqlite3.connect("/data/discord.db")
     cur = db.cursor()
     cur.execute(
         """CREATE TABLE IF NOT EXISTS users
@@ -128,6 +128,7 @@ async def on_message(message):
     if bot.user.id == user_id:  # pyright: ignore
         return
     msg = message.content
+    # If message content is a valid campus e-mail
     if re.match(r"\w+\.\w+@ict-scouts\.ch", msg):
         if send_email_code(db, msg, user_id):
             await message.author.send(
@@ -137,12 +138,41 @@ async def on_message(message):
             await message.author.send(
                 "Beim Versenden der E-Mail ist ein Fehler aufgetreten."
             )
+    # If message content is a code
     elif re.match("[0-9]{6}", msg):
         await message.author.send(await validate_user(db, user_id, msg))
+    # Any other messages
     else:
         await message.author.send(
             "Keine gültige E-Mail oder Bestätigungscode angegeben"
         )
+
+
+@bot.command(description="Show email of a user")
+async def userinfo(ctx, u: discord.User):
+    # Ensure user is in group
+    author_id = ctx.author.id
+    guild_id = os.getenv("GUILD_ID", None)
+    if guild_id is None:
+        return await ctx.respond("Es ist ein Fehler aufgetreten. `(NO_GUILD_ID)`")
+    if not (guild := bot.get_guild(int(guild_id))):
+        return await ctx.respond("Es ist ein Fehler aufgetreten. `(GUILD_NOT_FOUND)`")
+    if not (guild_member := guild.get_member(author_id)):
+        return await ctx.respond(
+            "Es ist ein Fehler aufgetreten. `(MEMBER_NOT_ON_DISCORD)`"
+        )
+    roles = guild_member.roles
+    # Ensure "Moderator" role is present
+    if not (next(iter([r for r in roles if r.name == "Moderator"]), None)):
+        return await ctx.respond(
+            "Du hast keine Berechtigung, diesen Befehl zu benutzen."
+        )
+
+    user_id = u.id
+    cur = db.cursor()
+    cur.execute("SELECT email FROM users WHERE id = ?", (user_id,))
+    email = cur.fetchone()[0]
+    await ctx.respond(f"**Userinfo for <@{user_id}>:** `{email}`")
 
 
 bot.run(os.getenv("BOT_TOKEN"))
