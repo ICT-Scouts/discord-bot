@@ -1,5 +1,6 @@
-import xmlrpc.client
 import os
+import xmlrpc.client
+
 
 class Odoo:
     def __init__(self):

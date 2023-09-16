@@ -5,6 +5,7 @@ import smtplib
 import sqlite3
 
 import discord
+
 from odoo import Odoo
 
 intents = discord.Intents.default()
@@ -80,10 +81,11 @@ def send_email_code(db, email, user_id):
     return True
 
 
-async def validate_user(db, user_id, code):
+async def validate_user(ctx, db, user_id, code):
     cur = db.cursor()
-    cur.execute("SELECT code FROM users WHERE id = ?", (user_id,))
-    stored_code = cur.fetchone()[0]
+    cur.execute("SELECT email, code FROM users WHERE id = ?", (user_id,))
+    data = cur.fetchone()
+    stored_code = data[1]
     if stored_code == code:
         # Update the DB
         cur.execute("UPDATE users SET verified = 1 WHERE id = ?", (user_id,))
@@ -107,7 +109,7 @@ async def validate_user(db, user_id, code):
             return "Es ist ein Fehler aufgetreten. `(ROLE_NOT_FOUND)`"
 
         await guild_member.add_roles(role)
-
+        await sync_user_role(ctx, user_id, data[0])
         return "Du wurdest erfolgreich verifiziert und hast jetzt Zugang zum Discord."
     else:
         return "Der eingegebene Code ist falsch."
@@ -137,7 +139,7 @@ async def get_server_member(ctx, user_id):
 
 async def ensure_moderator(ctx, user_id):
     """Check if a user is a moderator."""
-    if not (user_obj := get_server_member(ctx, user_id)):
+    if not (user_obj := await get_server_member(ctx, user_id)):
         return False
     if not isinstance(user_obj, discord.Member):
         return False
@@ -160,6 +162,24 @@ async def get_and_create_role(ctx, role_name):
     if not role:
         role = await guild.create_role(name=role_name)
     return role
+
+
+async def sync_user_role(ctx, user_id, user_mail):
+    # Get discord member and odoo role
+    if not (discord_member := await get_server_member(ctx, user_id)):
+        return
+    if not isinstance(discord_member, discord.Member):
+        return
+    odoo_role = odoo.get_campus_id(user_mail)
+    # Skip empty roles
+    if odoo_role == "":
+        return
+    # Get role object / create if not exists
+    discord_role = await get_and_create_role(ctx, odoo_role)
+    if not discord_role:
+        return
+    # Assign role to member
+    return await discord_member.add_roles(discord_role)
 
 
 @bot.event
@@ -191,7 +211,7 @@ async def on_message(message):
             )
     # If message content is a code
     elif re.match("[0-9]{6}", msg):
-        await message.author.send(await validate_user(db, user_id, msg))
+        await message.author.send(await validate_user(message, db, user_id, msg))
     # Any other messages
     else:
         await message.author.send(
@@ -203,7 +223,7 @@ async def on_message(message):
 async def userinfo(ctx, u: discord.User):
     # Ensure user is in group
     author_id = ctx.author.id
-    if not ensure_moderator(ctx, author_id):
+    if not await ensure_moderator(ctx, author_id):
         return
     # Get the user info
     user_id = u.id
@@ -219,7 +239,7 @@ async def userinfo(ctx, u: discord.User):
 async def print_userlist(ctx):
     # Ensure user is moderator
     author_id = ctx.author.id
-    if not ensure_moderator(ctx, author_id):
+    if not await ensure_moderator(ctx, author_id):
         return
     # Get all verified users from DB
     cur = db.cursor()
@@ -235,28 +255,15 @@ async def print_userlist(ctx):
 async def sync_roles(ctx):
     # Ensure user is moderator
     author_id = ctx.author.id
-    if not ensure_moderator(ctx, author_id):
+    if not await ensure_moderator(ctx, author_id):
         return
     # Get all verified users from DB
     cur = db.cursor()
     cur.execute("SELECT id, email FROM users WHERE verified = 1")
     data = cur.fetchall()
     for user in data:
-        # Get discord member and odoo role
-        if not (discord_member := get_server_member(ctx, user[0])):
-            continue
-        if not isinstance(discord_member, discord.Member):
-            continue
-        odoo_role = odoo.get_campus_id(user[1])
-        # Skip empty roles
-        if odoo_role == "":
-            continue
-        # Get role object / create if not exists
-        discord_role = await get_and_create_role(ctx, odoo_role)
-        if not discord_role:
-            continue
-        # Assign role to member
-        await discord_member.add_roles(discord_role)
+        # Sync user roles
+        await sync_user_role(ctx, user[0], user[1])
 
 
 bot.run(os.getenv("BOT_TOKEN"))
