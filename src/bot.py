@@ -5,6 +5,7 @@ import smtplib
 import sqlite3
 
 import discord
+from odoo import Odoo
 
 intents = discord.Intents.default()
 intents.members = True
@@ -31,6 +32,7 @@ def db_setup():
 
 
 db = db_setup()
+odoo = Odoo()
 
 
 def send_email_code(db, email, user_id):
@@ -111,6 +113,55 @@ async def validate_user(db, user_id, code):
         return "Der eingegebene Code ist falsch."
 
 
+async def get_guild(ctx):
+    """Get a guild object from the bot."""
+    guild_id = os.getenv("GUILD_ID", None)
+    if guild_id is None:
+        await ctx.respond("Es ist ein Fehler aufgetreten. `(NO_GUILD_ID)`")
+        return False
+    if not (guild := bot.get_guild(int(guild_id))):
+        await ctx.respond("Es ist ein Fehler aufgetreten. `(GUILD_NOT_FOUND)`")
+        return False
+    return guild
+
+
+async def get_server_member(ctx, user_id):
+    """Get a member object from the bot."""
+    if not (guild := await get_guild(ctx)):
+        return False
+    if not (guild_member := guild.get_member(user_id)):
+        await ctx.respond("Es ist ein Fehler aufgetreten. `(MEMBER_NOT_ON_DISCORD)`")
+        return False
+    return guild_member
+
+
+async def ensure_moderator(ctx, user_id):
+    """Check if a user is a moderator."""
+    if not (user_obj := get_server_member(ctx, user_id)):
+        return False
+    if not isinstance(user_obj, discord.Member):
+        return False
+    roles = user_obj.roles
+    # Ensure "Moderator" role is present
+    if not (next(iter([r for r in roles if r.name == "Moderator"]), None)):
+        await ctx.respond("Du hast keine Berechtigung, diesen Befehl zu benutzen.")
+        return False
+    return True
+
+
+async def get_and_create_role(ctx, role_name):
+    # Get the Guild object
+    if not (guild := await get_guild(ctx)):
+        return False
+    # Get the Guild roles
+    guild_roles = guild.roles
+    # Find the role, if not found, create it
+    role = next(iter([r for r in guild_roles if r.name == role_name]), None)
+    if not role:
+        role = await guild.create_role(name=role_name)
+    return role
+
+
 @bot.event
 async def on_member_join(member):
     await member.send(
@@ -152,27 +203,60 @@ async def on_message(message):
 async def userinfo(ctx, u: discord.User):
     # Ensure user is in group
     author_id = ctx.author.id
-    guild_id = os.getenv("GUILD_ID", None)
-    if guild_id is None:
-        return await ctx.respond("Es ist ein Fehler aufgetreten. `(NO_GUILD_ID)`")
-    if not (guild := bot.get_guild(int(guild_id))):
-        return await ctx.respond("Es ist ein Fehler aufgetreten. `(GUILD_NOT_FOUND)`")
-    if not (guild_member := guild.get_member(author_id)):
-        return await ctx.respond(
-            "Es ist ein Fehler aufgetreten. `(MEMBER_NOT_ON_DISCORD)`"
-        )
-    roles = guild_member.roles
-    # Ensure "Moderator" role is present
-    if not (next(iter([r for r in roles if r.name == "Moderator"]), None)):
-        return await ctx.respond(
-            "Du hast keine Berechtigung, diesen Befehl zu benutzen."
-        )
-
+    if not ensure_moderator(ctx, author_id):
+        return
+    # Get the user info
     user_id = u.id
     cur = db.cursor()
     cur.execute("SELECT email FROM users WHERE id = ?", (user_id,))
-    email = cur.fetchone()[0]
-    await ctx.respond(f"**Userinfo for <@{user_id}>:** `{email}`")
+    data = cur.fetchone()
+    if len(data) == 0:
+        await ctx.respond("Benutzer ist noch nicht verifiziert.")
+    await ctx.respond(f"Userinfo für <@{user_id}>: `{data[0]}`")
+
+
+@bot.command(description="Print user list")
+async def print_userlist(ctx):
+    # Ensure user is moderator
+    author_id = ctx.author.id
+    if not ensure_moderator(ctx, author_id):
+        return
+    # Get all verified users from DB
+    cur = db.cursor()
+    cur.execute("SELECT id, email FROM users WHERE verified = 1")
+    data = cur.fetchall()
+    output = "Aktuelle Benutzer:\n"
+    for user in data:
+        output += f"<@{user[0]}>: `{user[1]}`\n"
+    return await ctx.respond(output)
+
+
+@bot.command(description="Sync all member roles")
+async def sync_roles(ctx):
+    # Ensure user is moderator
+    author_id = ctx.author.id
+    if not ensure_moderator(ctx, author_id):
+        return
+    # Get all verified users from DB
+    cur = db.cursor()
+    cur.execute("SELECT id, email FROM users WHERE verified = 1")
+    data = cur.fetchall()
+    for user in data:
+        # Get discord member and odoo role
+        if not (discord_member := get_server_member(ctx, user[0])):
+            continue
+        if not isinstance(discord_member, discord.Member):
+            continue
+        odoo_role = odoo.get_campus_id(user[1])
+        # Skip empty roles
+        if odoo_role == "":
+            continue
+        # Get role object / create if not exists
+        discord_role = await get_and_create_role(ctx, odoo_role)
+        if not discord_role:
+            continue
+        # Assign role to member
+        await discord_member.add_roles(discord_role)
 
 
 bot.run(os.getenv("BOT_TOKEN"))
