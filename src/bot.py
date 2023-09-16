@@ -167,19 +167,20 @@ async def get_and_create_role(ctx, role_name):
 async def sync_user_role(ctx, user_id, user_mail):
     # Get discord member and odoo role
     if not (discord_member := await get_server_member(ctx, user_id)):
-        return
+        return False
     if not isinstance(discord_member, discord.Member):
-        return
+        return False
     odoo_role = odoo.get_campus_id(user_mail)
     # Skip empty roles
-    if odoo_role == "":
-        return
+    if odoo_role == "" or not odoo_role:
+        return False
     # Get role object / create if not exists
     discord_role = await get_and_create_role(ctx, odoo_role)
     if not discord_role:
-        return
+        return False
     # Assign role to member
-    return await discord_member.add_roles(discord_role)
+    await discord_member.add_roles(discord_role)
+    return True
 
 
 @bot.event
@@ -261,9 +262,15 @@ async def sync_roles(ctx):
     cur = db.cursor()
     cur.execute("SELECT id, email FROM users WHERE verified = 1")
     data = cur.fetchall()
+    results = []
     for user in data:
         # Sync user roles
-        await sync_user_role(ctx, user[0], user[1])
+        results.append(await sync_user_role(ctx, user[0], user[1]))
+    success = results.count(True)
+    failed = results.count(False)
+    await ctx.respond(
+        f"Rollen wurden erfolgreich synchronisiert. ({success} erfolgreich, {failed} fehlgeschlagen)"
+    )
 
 
 bot.run(os.getenv("BOT_TOKEN"))
