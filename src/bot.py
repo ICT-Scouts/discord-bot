@@ -248,6 +248,9 @@ async def print_userlist(ctx):
     data = cur.fetchall()
     output = "Aktuelle Benutzer:\n"
     for user in data:
+        if len(output) > 1800:
+            await ctx.respond(output)
+            output = ""
         output += f"<@{user[0]}>: `{user[1]}`\n"
     return await ctx.respond(output)
 
