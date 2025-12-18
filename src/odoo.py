@@ -27,4 +27,4 @@ class Odoo:
             return False
 
         # Get campus id
-        return res[0]["campus_id"][1]
+        return res[0]["category_id"][1]
