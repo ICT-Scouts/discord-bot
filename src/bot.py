@@ -170,7 +170,7 @@ async def sync_user_role(ctx, user_id, user_mail):
         return False
     if not isinstance(discord_member, discord.Member):
         return False
-    odoo_role = odoo.get_campus_id(user_mail)
+    odoo_role = odoo.get_campus_name(user_mail)
     # Skip empty roles
     if odoo_role == "" or not odoo_role:
         return False
