@@ -4,10 +4,10 @@ import xmlrpc.client
 
 class Odoo:
     def __init__(self):
-        self.url = "https://ict-scouts.edudoo.ch"
+        self.url = "https://portal.ict-scouts.ch"
         common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(self.url))
-        self.db = "ict-scouts"
-        self.username = "discord@ict-scouts.ch"
+        self.db = "live"
+        self.username = os.getenv("ODOO_API_USER")
         self.password = os.getenv("ODOO_API_KEY")
         self.uid = common.authenticate(self.db, self.username, self.password, {})
 
@@ -16,7 +16,7 @@ class Odoo:
         email = email.lower()
 
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(self.url))
-        res = models.execute_kw(self.db, self.uid, self.password, 'op.student', 'search_read', [[['google_mail', '=',email]]], {'fields': ['campus_id'], 'limit': 1})
+        res = models.execute_kw(self.db, self.uid, self.password, 'res.partner', 'search_read', [[['google_mail', '=',email]]], {'fields': ['category_id'], 'limit': 1})
 
         # Ensure return type is list
         if not isinstance(res, list):
